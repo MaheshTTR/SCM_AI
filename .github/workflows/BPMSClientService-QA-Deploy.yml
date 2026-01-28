@@ -1,0 +1,306 @@
+name: BPMSClientService-QA-SiteA-SiteB-Deploy
+run-name: Deploy version  ${{ inputs.build_ver }} of ${{ inputs.ApplicationName }} to ${{ inputs.environment }}-env
+on: 
+  workflow_dispatch:
+    inputs:  
+      environment:
+        description: 'Select Environment'
+        required: true
+        default: QA-SiteA
+        type: choice
+        options:
+          - QA-SiteA
+          - QA-SiteB
+        
+      build_ver:
+        description: 'Build version tag (e.g., 1.0, 2.5)'
+        required: true
+      ApplicationName:
+        description: 'Application'
+        required: true
+        default: BPMSClientService
+
+jobs:
+  validate-membership:
+    runs-on: ubuntu-latest
+    steps:  
+       - uses: actions/checkout@v3  # Keep v3 for consistency
+       - name: Run Custom Action
+         id: Access
+         uses: tr/ContentSCM_Actions/.github/actions/check-group@main  # Reference the action directly
+         with:
+          teams: "ContentSCM-Admin,204316_ASR"  # Change to "QA" if needed
+          username: ${{ github.actor }}
+          org: "tr"  # Replace with your GitHub organization name
+          token: ${{ secrets.SCM_GITTOKEN }}
+        # Adding token for private repo access
+
+  run-workflow-if-member:
+    runs-on: ubuntu-latest
+    needs: validate-membership
+    if: success()  # Only run if the validate-membership job is successful
+    steps:
+      - name: Run only if the user belongs to DEV or QA team
+        run: echo "User belongs to the required team, workflow continues..."
+        
+
+  deploy:
+    runs-on: [ 'self-hosted', 'Windows', 'X64', 'JUDICIAL']
+    needs: run-workflow-if-member
+    environment: ${{ inputs.environment }} 
+    env:
+     ENV_CONFIG_FILE: ".github/env-variables.txt"
+     DEV_DE: "c851oatscmdfd"
+     TEST_DE: "c887miescmdft"
+     UAT_DE: "c418bivscmdfu"
+     PREPROD_DE: "c731ivkscmdfq"
+     PROD_DE: "c141srascmdfp"
+     QASiteAServers: ${{ secrets.QASITEASERVERS }}
+     QASiteBServers: ${{ secrets.QASITEBSERVERS }}
+   
+    steps:
+      - name: Clean workspace
+        run: |
+          Remove-Item -Path ${{ github.workspace }}\* -Recurse -ErrorAction SilentlyContinue
+          echo "Removed the content of workspace"
+          dir
+          
+      - name: Use Composite Action Checkout code
+        uses: tr/ContentSCM_Actions/.github/actions/Build-Tools@main
+        with:
+         scm_git_token:  ${{ secrets.SCM_GITTOKEN }}
+         optional_step_run_checkout: Yes
+         
+      # NEW: Store current deployed version before attempting new deployment
+      - name: Get Current Deployed Version
+        id: get-current-version
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $versionFile = "C:\deployments\${{ inputs.ApplicationName }}\${{ inputs.environment }}\current-version.txt"
+          
+          if (Test-Path $versionFile) {
+            $currentVersion = Get-Content $versionFile -Raw
+            $currentVersion = $currentVersion.Trim()
+            Write-Output "Current deployed version: $currentVersion"
+            echo "PREVIOUS_VERSION=$currentVersion" >> $env:GITHUB_OUTPUT
+            echo "HAS_PREVIOUS=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Output "No previous version found. This might be first deployment."
+            echo "PREVIOUS_VERSION=none" >> $env:GITHUB_OUTPUT
+            echo "HAS_PREVIOUS=false" >> $env:GITHUB_OUTPUT
+          }
+     
+      - name: Set up deployment content
+        id: set-deploy-content
+        shell: pwsh
+        run: |
+          $DEPLOY_ENV = ""
+          $DE_SERVER = ""
+          $Env = ""
+          $BiasService = ""
+          $Servers = ""
+          $ports = ""
+          switch ("${{ inputs.environment }}") {
+            "QA-SiteA" { 
+                     $DE_SERVER = $env:PREPROD_DE
+                     $Env = "QA"
+                     $DEPLOY_ENV = "QA"
+                     $BiasService = "trams-eag.preprod.int.thomsonreuters.com"
+                     $ApplicationNamespace = "ECT-Judicial-QA"
+                      $Servers = $env:QASiteAServers
+                    $ports = "8519,8519,8519"     
+            }
+             "QA-SiteB" { 
+                     $DE_SERVER = $env:PREPROD_DE
+                     $Env = "QA"
+                     $DEPLOY_ENV = "QA"
+                     $BiasService = "trams-eag.preprod.int.thomsonreuters.com"
+                     $ApplicationNamespace = "ECT-Judicial-QA"
+                     $Servers = $env:QASiteBServers
+                     $ports = "8519,8519,8519"
+            }
+           
+            default { Write-Error "Unknown environment: ${{ inputs.environment }}"; exit 1 }
+          }
+          Write-Output "Environment to deploy: $DEPLOY_ENV"
+          Write-Output "DE Server: $DE_SERVER"
+          Write-Output "Environment: $Env"
+          Write-Output "BiasService: $BiasService"
+           
+          echo "DE_SERVER=$DE_SERVER" >> $env:GITHUB_ENV
+          echo "DEPLOY_ENV=$DEPLOY_ENV" >> $env:GITHUB_ENV
+          echo "Env=$Env" >>  $env:GITHUB_ENV
+          echo "BiasService=$BiasService" >>  $env:GITHUB_ENV
+          echo "ApplicationNamespace=$ApplicationNamespace" >>  $env:GITHUB_ENV
+          echo "Servers=$Servers" >> $env:GITHUB_ENV
+          echo "ports=$ports" >> $env:GITHUB_ENV
+         
+       
+      # - name: Set environment variables defined in the ENV_CONFIG_FILE
+      #   shell: pwsh
+      #   run: |
+      #     $envConfigFile = ".github/env-variables.txt"
+      #     Get-Content $envConfigFile | ForEach-Object {
+      #       if ($_ -match "^[^#].*=") {
+      #         Write-Host "Processing line: $_"
+      #         Add-Content -Path $env:GITHUB_ENV -Value $_
+      #       }
+      #     }
+
+       
+      - name: Verify PowerShell Core installation
+        run: Get-Command pwsh
+        shell: powershell
+
+      - name: Print environment variables
+        shell: pwsh
+        run: |
+         Write-Host "Environment variables from config file:"
+         Get-Content $env:GITHUB_ENV
+         
+      - name: Check NAS path via HTTP
+        id: nas_result
+        shell: pwsh
+        run: |
+            $url = "http://scmcontent.int.westgroup.com/contentRelease/BPMSClientService/${{ inputs.build_ver }}"
+            try {
+              $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Method Head -ErrorAction Stop
+              echo "result=FOUND" >> $env:GITHUB_OUTPUT
+            } catch {
+              echo "result=NOTFOUND" >> $env:GITHUB_OUTPUT
+            }
+            
+      - name: Download and upload artifact if not present
+        if: steps.nas_result.outputs.result == 'NOTFOUND'
+        uses: tr/ContentSCM_Actions/.github/actions/Artifactdownloder@main
+        with:
+            application: ${{ inputs.ApplicationName }}
+            version: ${{ inputs.build_ver }}
+            nas_path: /ct-data/judicial/deployment/BPMSClientService
+            repo_url: tr/jwb_JudicialWorkflow_BPMSClientService
+            scm_git_token: ${{ secrets.SCM_GITTOKEN }}
+            scm_username: ${{ secrets.SCM_USERNAME }}
+            scm_password: ${{ secrets.SCM_PASSWORD }}
+     
+      - name: Execute SCM Remote Command
+        id: deploy-step
+        uses: tr/ContentSCM_Actions/.github/actions/SCM-RemoteCMDWin@main
+        with:
+            SCMserver: "${{ env.DE_SERVER }}"
+            SCMusername: ${{ secrets.SCM_USERNAME }}
+            SCMpassword: ${{ secrets.SCM_PASSWORD }}
+            SCMcommand: /appserver/deployment/deploytomcat  Application=${{ inputs.ApplicationName }} Env=${{ env.Env }} ApplicationNamespace="${{ env.ApplicationNamespace }}" script=./conf/workflow.JWB.xml Limit=${{ env.Servers }} forceDeployment=true release=${{ github.event.inputs.build_ver }} username=${{ secrets.NODEAGENT_USERNAME }} password=${{ secrets.NODEAGENT_PASSWORD }}  dryRun=true BiasService="${{ env.BiasService }}"
+
+      - name: SmokeTest
+        id: smoke-test
+        uses: tr/ContentSCM_Actions/.github/actions/SmokeTest@main
+        with:
+          environment: ${{ inputs.environment }}
+          build_ver: ${{ inputs.build_ver }}
+          application_name: ${{ inputs.ApplicationName }}
+          servers: ${{ env.Servers }}
+          ports: ${{ env.ports }}
+          pattern1: "Clear"
+          pattern2: "QA"
+          
+      # NEW: Save successful deployment version
+      - name: Save Deployed Version
+        if: success()
+        shell: pwsh
+        run: |
+          $versionDir = "C:\deployments\${{ inputs.ApplicationName }}\${{ inputs.environment }}"
+          
+          # Create directory if it doesn't exist
+          if (-not (Test-Path $versionDir)) {
+            New-Item -ItemType Directory -Path $versionDir -Force | Out-Null
+          }
+          
+          # Save the current version
+          $versionFile = Join-Path $versionDir "current-version.txt"
+          "${{ inputs.build_ver }}" | Set-Content -Path $versionFile -NoNewline
+          
+          # Verify the file was written correctly
+          if (Test-Path $versionFile) {
+            $savedVersion = Get-Content $versionFile -Raw
+            if ($savedVersion.Trim() -eq "${{ inputs.build_ver }}") {
+              Write-Output "Successfully saved version ${{ inputs.build_ver }} as current deployed version"
+            } else {
+              Write-Error "Version file verification failed. Expected: ${{ inputs.build_ver }}, Got: $savedVersion"
+              exit 1
+            }
+          } else {
+            Write-Error "Failed to create version file at $versionFile"
+            exit 1
+          }
+          
+      # NEW: Rollback on deployment failure
+      - name: Rollback to Previous Version
+        if: (failure() || cancelled()) && (steps.deploy-step.outcome == 'failure' || steps.smoke-test.outcome == 'failure') && steps.get-current-version.outputs.HAS_PREVIOUS == 'true'
+        shell: pwsh
+        run: |
+          Write-Host "========================================" -ForegroundColor Red
+          Write-Host "DEPLOYMENT FAILED - INITIATING ROLLBACK" -ForegroundColor Red
+          Write-Host "========================================" -ForegroundColor Red
+          Write-Host ""
+          Write-Host "Rolling back from version ${{ inputs.build_ver }} to ${{ steps.get-current-version.outputs.PREVIOUS_VERSION }}" -ForegroundColor Yellow
+          Write-Host ""
+          
+      - name: Execute Rollback Deployment
+        id: rollback-deploy
+        if: (failure() || cancelled()) && (steps.deploy-step.outcome == 'failure' || steps.smoke-test.outcome == 'failure') && steps.get-current-version.outputs.HAS_PREVIOUS == 'true'
+        uses: tr/ContentSCM_Actions/.github/actions/SCM-RemoteCMDWin@main
+        with:
+            SCMserver: "${{ env.DE_SERVER }}"
+            SCMusername: ${{ secrets.SCM_USERNAME }}
+            SCMpassword: ${{ secrets.SCM_PASSWORD }}
+            SCMcommand: /appserver/deployment/deploytomcat  Application=${{ inputs.ApplicationName }} Env=${{ env.Env }} ApplicationNamespace="${{ env.ApplicationNamespace }}" script=./conf/workflow.JWB.xml Limit=${{ env.Servers }} forceDeployment=true release=${{ steps.get-current-version.outputs.PREVIOUS_VERSION }} username=${{ secrets.NODEAGENT_USERNAME }} password=${{ secrets.NODEAGENT_PASSWORD }}  dryRun=true BiasService="${{ env.BiasService }}"
+            
+      - name: Verify Rollback Success
+        id: rollback-validate
+        if: (failure() || cancelled()) && (steps.deploy-step.outcome == 'failure' || steps.smoke-test.outcome == 'failure') && steps.get-current-version.outputs.HAS_PREVIOUS == 'true'
+        uses: tr/ContentSCM_Actions/.github/actions/SmokeTest@main
+        with:
+          environment: ${{ inputs.environment }}
+          build_ver: ${{ steps.get-current-version.outputs.PREVIOUS_VERSION }}
+          application_name: ${{ inputs.ApplicationName }}
+          servers: ${{ env.Servers }}
+          ports: ${{ env.ports }}
+          pattern1: "Clear"
+          pattern2: "QA"
+          
+      - name: Rollback Notification
+        if: always() && steps.rollback-deploy.outcome == 'success' && steps.rollback-validate.outcome == 'success'
+        shell: pwsh
+        run: |
+          Write-Host "========================================" -ForegroundColor Green
+          Write-Host "ROLLBACK COMPLETED SUCCESSFULLY" -ForegroundColor Green
+          Write-Host "========================================" -ForegroundColor Green
+          Write-Host ""
+          Write-Host "Service restored to version: ${{ steps.get-current-version.outputs.PREVIOUS_VERSION }}" -ForegroundColor Cyan
+          Write-Host "Failed deployment version: ${{ inputs.build_ver }}" -ForegroundColor Yellow
+          Write-Host ""
+          Write-Host "Please investigate the deployment failure before attempting to deploy version ${{ inputs.build_ver }} again." -ForegroundColor Yellow
+          
+      - name: Rollback Failed Notification
+        if: always() && steps.get-current-version.outputs.HAS_PREVIOUS == 'true' && (steps.rollback-deploy.outcome == 'failure' || steps.rollback-validate.outcome == 'failure')
+        shell: pwsh
+        run: |
+          Write-Host "========================================" -ForegroundColor Red
+          Write-Host "CRITICAL: ROLLBACK FAILED" -ForegroundColor Red
+          Write-Host "========================================" -ForegroundColor Red
+          Write-Host ""
+          Write-Host "Deployment of version ${{ inputs.build_ver }} failed" -ForegroundColor Yellow
+          Write-Host "Attempted rollback to version ${{ steps.get-current-version.outputs.PREVIOUS_VERSION }} also failed" -ForegroundColor Yellow
+          Write-Host ""
+          Write-Host "MANUAL INTERVENTION REQUIRED IMMEDIATELY" -ForegroundColor Red
+          Write-Host "Service may be in an unstable state" -ForegroundColor Red
+          Write-Host ""
+          exit 1
+  
+      - name: Clean workspace again
+        if: always()
+        run: |
+          Remove-Item -Path ${{ github.workspace }}\* -Recurse -ErrorAction SilentlyContinue
+          echo "Workspace cleaned after operations"
+          dir

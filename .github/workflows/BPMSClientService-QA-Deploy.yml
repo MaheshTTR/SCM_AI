@@ -16,9 +16,9 @@ on:
         description: 'Build version tag (e.g., 1.0, 2.5)'
         required: true
       ApplicationName:
-       description: 'Application'
-       required: true
-       default: BPMSClientService
+        description: 'Application'
+        required: true
+        default: BPMSClientService
 
 jobs:
   validate-membership:
@@ -194,7 +194,6 @@ jobs:
 
       - name: SmokeTest
         id: smoke-test
-        if:  inputs.Operation != 'stopServer'
         uses: tr/ContentSCM_Actions/.github/actions/SmokeTest@main
         with:
           environment: ${{ inputs.environment }}
@@ -221,11 +220,23 @@ jobs:
           $versionFile = Join-Path $versionDir "current-version.txt"
           "${{ inputs.build_ver }}" | Set-Content -Path $versionFile -NoNewline
           
-          Write-Output "Successfully saved version ${{ inputs.build_ver }} as current deployed version"
+          # Verify the file was written correctly
+          if (Test-Path $versionFile) {
+            $savedVersion = Get-Content $versionFile -Raw
+            if ($savedVersion.Trim() -eq "${{ inputs.build_ver }}") {
+              Write-Output "Successfully saved version ${{ inputs.build_ver }} as current deployed version"
+            } else {
+              Write-Error "Version file verification failed. Expected: ${{ inputs.build_ver }}, Got: $savedVersion"
+              exit 1
+            }
+          } else {
+            Write-Error "Failed to create version file at $versionFile"
+            exit 1
+          }
           
       # NEW: Rollback on deployment failure
       - name: Rollback to Previous Version
-        if: failure() && steps.get-current-version.outputs.HAS_PREVIOUS == 'true'
+        if: (failure() || cancelled()) && (steps.deploy-step.outcome == 'failure' || steps.smoke-test.outcome == 'failure') && steps.get-current-version.outputs.HAS_PREVIOUS == 'true'
         shell: pwsh
         run: |
           Write-Host "========================================" -ForegroundColor Red
@@ -236,7 +247,8 @@ jobs:
           Write-Host ""
           
       - name: Execute Rollback Deployment
-        if: failure() && steps.get-current-version.outputs.HAS_PREVIOUS == 'true' && steps.get-current-version.outputs.PREVIOUS_VERSION != 'none'
+        id: rollback-deploy
+        if: (failure() || cancelled()) && (steps.deploy-step.outcome == 'failure' || steps.smoke-test.outcome == 'failure') && steps.get-current-version.outputs.HAS_PREVIOUS == 'true'
         uses: tr/ContentSCM_Actions/.github/actions/SCM-RemoteCMDWin@main
         with:
             SCMserver: "${{ env.DE_SERVER }}"
@@ -245,7 +257,8 @@ jobs:
             SCMcommand: /appserver/deployment/deploytomcat  Application=${{ inputs.ApplicationName }} Env=${{ env.Env }} ApplicationNamespace="${{ env.ApplicationNamespace }}" script=./conf/workflow.JWB.xml Limit=${{ env.Servers }} forceDeployment=true release=${{ steps.get-current-version.outputs.PREVIOUS_VERSION }} username=${{ secrets.NODEAGENT_USERNAME }} password=${{ secrets.NODEAGENT_PASSWORD }}  dryRun=true BiasService="${{ env.BiasService }}"
             
       - name: Verify Rollback Success
-        if: failure() && steps.get-current-version.outputs.HAS_PREVIOUS == 'true' && steps.get-current-version.outputs.PREVIOUS_VERSION != 'none'
+        id: rollback-validate
+        if: (failure() || cancelled()) && (steps.deploy-step.outcome == 'failure' || steps.smoke-test.outcome == 'failure') && steps.get-current-version.outputs.HAS_PREVIOUS == 'true'
         uses: tr/ContentSCM_Actions/.github/actions/SmokeTest@main
         with:
           environment: ${{ inputs.environment }}
@@ -257,7 +270,7 @@ jobs:
           pattern2: "QA"
           
       - name: Rollback Notification
-        if: failure() && steps.get-current-version.outputs.HAS_PREVIOUS == 'true'
+        if: always() && steps.rollback-deploy.outcome == 'success' && steps.rollback-validate.outcome == 'success'
         shell: pwsh
         run: |
           Write-Host "========================================" -ForegroundColor Green
@@ -268,6 +281,22 @@ jobs:
           Write-Host "Failed deployment version: ${{ inputs.build_ver }}" -ForegroundColor Yellow
           Write-Host ""
           Write-Host "Please investigate the deployment failure before attempting to deploy version ${{ inputs.build_ver }} again." -ForegroundColor Yellow
+          
+      - name: Rollback Failed Notification
+        if: always() && steps.get-current-version.outputs.HAS_PREVIOUS == 'true' && (steps.rollback-deploy.outcome == 'failure' || steps.rollback-validate.outcome == 'failure')
+        shell: pwsh
+        run: |
+          Write-Host "========================================" -ForegroundColor Red
+          Write-Host "CRITICAL: ROLLBACK FAILED" -ForegroundColor Red
+          Write-Host "========================================" -ForegroundColor Red
+          Write-Host ""
+          Write-Host "Deployment of version ${{ inputs.build_ver }} failed" -ForegroundColor Yellow
+          Write-Host "Attempted rollback to version ${{ steps.get-current-version.outputs.PREVIOUS_VERSION }} also failed" -ForegroundColor Yellow
+          Write-Host ""
+          Write-Host "MANUAL INTERVENTION REQUIRED IMMEDIATELY" -ForegroundColor Red
+          Write-Host "Service may be in an unstable state" -ForegroundColor Red
+          Write-Host ""
+          exit 1
   
       - name: Clean workspace again
         if: always()

@@ -1,0 +1,159 @@
+# AI Agent Configuration
+# This file defines the behavior and capabilities of the AI agent in the CI/CD pipeline
+
+version: "1.0.0"
+
+agent:
+  name: "SCM_AI Security Agent"
+  description: "AI-powered agent for autonomous remediation, risk assessment, and security patching"
+  version: "1.0.0"
+  
+capabilities:
+  # Autonomous Remediation
+  autonomous_remediation:
+    enabled: true
+    auto_fix_threshold: "medium"  # low, medium, high
+    require_approval: true
+    max_changes_per_run: 10
+    
+  # Intelligent Risk Assessment
+  risk_assessment:
+    enabled: true
+    risk_factors:
+      - file_count
+      - line_changes
+      - sensitive_files
+      - security_patterns
+      - code_complexity
+    thresholds:
+      high_risk: 70
+      medium_risk: 40
+      low_risk: 0
+    
+  # Security Auto-Patching
+  security_patching:
+    enabled: true
+    auto_patch_types:
+      - dependency_vulnerabilities
+      - known_cves
+      - security_patterns
+    severity_threshold: "medium"  # critical, high, medium, low
+    create_pr: true
+    
+  # Issue Auto-Triage
+  issue_triage:
+    enabled: true
+    auto_label: true
+    auto_assign: false
+    priority_detection: true
+
+# Security Settings
+security:
+  scan_schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  allowed_languages:
+    - javascript
+    - python
+    - java
+    - go
+  
+  vulnerability_sources:
+    - github_advisory_database
+    - codeql
+    - dependency_scanning
+  
+  auto_patch_rules:
+    - type: "dependency"
+      action: "update"
+      severity: ["critical", "high"]
+    - type: "code_pattern"
+      action: "fix"
+      severity: ["critical", "high", "medium"]
+
+# Remediation Settings
+remediation:
+  dependency_updates:
+    auto_update: true
+    update_strategy: "conservative"  # conservative, moderate, aggressive
+    test_before_merge: true
+    
+  code_quality:
+    auto_fix_enabled: true
+    fix_types:
+      - formatting
+      - linting
+      - simple_bugs
+    
+  notification:
+    on_high_risk: true
+    on_auto_patch: true
+    on_remediation: true
+
+# Risk Assessment Settings
+risk_assessment:
+  analyze_pr: true
+  analyze_commits: true
+  factors:
+    file_changes:
+      weight: 0.3
+      thresholds:
+        high: 50
+        medium: 20
+    line_changes:
+      weight: 0.2
+      thresholds:
+        high: 1000
+        medium: 500
+    sensitive_files:
+      weight: 0.4
+      patterns:
+        - "*.env"
+        - "*.key"
+        - "*.pem"
+        - "*secret*"
+        - "*password*"
+        - "*credential*"
+        - "config/*"
+    code_complexity:
+      weight: 0.1
+      enabled: true
+
+# Logging and Reporting
+logging:
+  level: "info"  # debug, info, warn, error
+  retention_days: 90
+  reports:
+    - security_scan
+    - risk_assessment
+    - remediation_summary
+    - patch_log
+
+# Integration Settings
+integrations:
+  github:
+    create_issues: true
+    create_prs: true
+    add_labels: true
+    add_comments: true
+  
+  notifications:
+    channels:
+      - github_comments
+      - github_checks
+    
+# AI Model Configuration (Future Enhancement)
+# Note: Current implementation uses rule-based analysis.
+# AI/ML model integration is planned for future releases.
+ai_model:
+  # These settings are reserved for future AI/ML integration
+  enabled: false
+  provider: "placeholder"  # Future: openai, azure, etc.
+  model: "rule-based-v1"  # Current: rule-based analysis
+  
+  # Future enhancement: Actual AI model calls
+  future_capabilities:
+    - natural_language_processing
+    - pattern_recognition
+    - predictive_analysis
+  
+  # Current implementation uses predefined rules and heuristics
+  current_implementation: "rule-based"

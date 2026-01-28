@@ -1,0 +1,38 @@
+# AI Agent logs and temporary files
+.ai-agent/logs/*
+!.ai-agent/logs/.gitkeep
+*.log
+ai-assessment.json
+risk-report.md
+patch-log.txt
+changed_files.txt
+
+# Dependency directories
+node_modules/
+__pycache__/
+*.pyc
+venv/
+env/
+.env
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+target/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp

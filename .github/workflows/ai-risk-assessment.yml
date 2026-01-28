@@ -38,8 +38,8 @@ jobs:
           
           # Count changes
           TOTAL_FILES=$(wc -l < changed_files.txt)
-          ADDED_LINES=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{sum+=$1} END {print sum+0}')
-          DELETED_LINES=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{sum+=$2} END {print sum+0}')
+          ADDED_LINES=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk 'BEGIN{sum=0} {sum+=$1} END {print sum}')
+          DELETED_LINES=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk 'BEGIN{sum=0} {sum+=$2} END {print sum}')
           
           echo "total_files=$TOTAL_FILES" >> $GITHUB_OUTPUT
           echo "added_lines=$ADDED_LINES" >> $GITHUB_OUTPUT

@@ -34,7 +34,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' || 
       github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     
     steps:
       - name: Checkout code
@@ -139,7 +139,7 @@ jobs:
           ISSUES_FOUND=false
           
           # Check for TODO/FIXME comments
-          if grep -r "TODO\|FIXME" --include="*.js" --include="*.py" --include="*.java" . 2>/dev/null | head -5 >> .ai-agent/logs/code-quality-remediation.log; then
+          if grep -rE "TODO|FIXME" --include="*.js" --include="*.py" --include="*.java" . 2>/dev/null | head -5 >> .ai-agent/logs/code-quality-remediation.log; then
             echo "[WARN] Found TODO/FIXME comments requiring attention" >> .ai-agent/logs/code-quality-remediation.log
             ISSUES_FOUND=true
           fi
@@ -237,7 +237,7 @@ jobs:
   remediation-summary:
     name: Generate Remediation Summary
     runs-on: ubuntu-latest
-    needs: [dependency-remediation, code-quality-remediation]
+    needs: [dependency-remediation, code-quality-remediation, issue-auto-triage]
     if: always()
     
     steps:
@@ -257,6 +257,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Dependency Remediation: ${{ needs.dependency-remediation.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Code Quality Remediation: ${{ needs.code-quality-remediation.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Issue Auto-Triage: ${{ needs.issue-auto-triage.result }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Reports Generated" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

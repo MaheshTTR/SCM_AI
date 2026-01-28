@@ -140,22 +140,20 @@ integrations:
       - github_comments
       - github_checks
     
-# AI Model Configuration
+# AI Model Configuration (Future Enhancement)
+# Note: Current implementation uses rule-based analysis.
+# AI/ML model integration is planned for future releases.
 ai_model:
-  provider: "openai"
-  model: "gpt-4"
-  temperature: 0.3
-  max_tokens: 2000
+  # These settings are reserved for future AI/ML integration
+  enabled: false
+  provider: "placeholder"  # Future: openai, azure, etc.
+  model: "rule-based-v1"  # Current: rule-based analysis
   
-  prompts:
-    security_analysis: |
-      Analyze the following code changes for security vulnerabilities.
-      Focus on: SQL injection, XSS, authentication issues, and data leaks.
-    
-    risk_assessment: |
-      Assess the risk level of the following changes.
-      Consider: scope, complexity, and potential impact.
-    
-    remediation: |
-      Suggest automated fixes for the identified issues.
-      Prioritize: safety, minimal changes, and backward compatibility.
+  # Future enhancement: Actual AI model calls
+  future_capabilities:
+    - natural_language_processing
+    - pattern_recognition
+    - predictive_analysis
+  
+  # Current implementation uses predefined rules and heuristics
+  current_implementation: "rule-based"

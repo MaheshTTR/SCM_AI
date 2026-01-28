@@ -64,7 +64,7 @@ jobs:
           echo "assessment_file=ai-assessment.json" >> $GITHUB_OUTPUT
       
       - name: Upload AI Assessment Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.4.3
         with:
           name: ai-security-assessment
           path: ai-assessment.json
@@ -83,7 +83,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Download AI Assessment
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.1.3
         with:
           name: ai-security-assessment
       
@@ -146,7 +146,7 @@ jobs:
           labels: security,automated,ai-generated
       
       - name: Upload Patch Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.4.3
         with:
           name: security-patch-report
           path: patch-log.txt
